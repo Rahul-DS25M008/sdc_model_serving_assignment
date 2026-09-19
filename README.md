@@ -30,8 +30,8 @@ uv run --locked uvicorn app:app --reload
 ```
 
 Open [the interactive API docs](http://127.0.0.1:8000/docs) and follow the tasks in
-[the assignment README](assignment/README.md). The image-generation endpoints
-are intentionally left as exercises.
+[the assignment README](assignment/README.md). The image-generation assignment is implemented in the `assignment` directory.
+See the assignment README for API usage, setup, design decisions, and testing instructions.
 
 ## Run the checks
 
@@ -45,5 +45,4 @@ uv run --locked python -m unittest discover -s ../tests -v
 
 Open the repository in its dev container to install both locked environments
 automatically. The default Python interpreter is
-`1_fast_api_tutorial/.venv/bin/python`; select `assignment/.venv/bin/python` when
-working on the assignment.
+`assignment/.venv/bin/python`; 
