@@ -1,5 +1,12 @@
 import os
-from fastapi import FastAPI, BackgroundTasks
+import time
+import uuid
+from typing import Optional
+
+from fastapi import FastAPI, BackgroundTasks, HTTPException, status
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+
 from image_generator import ImageGenerator
 
 app = FastAPI()
@@ -24,14 +31,126 @@ async def example_endpoint(background_tasks: BackgroundTasks):
 # TODO: Define your POST /images endpoint for asynchronous image generation
 # This endpoint should accept a custom prompt, process it asynchronously,
 # and return an image ID for later retrieval.
+class ImageRequest(BaseModel):
+    subject: str = Field(..., min_length=3, max_length=500)
+    style: str = Field(
+        default="digital illustration",
+        min_length=2,
+        max_length=100
+    )
+    mood: str = Field(
+
+        default="cinematic",
+        min_length=2,
+        max_length=100
+    )
+    lighting: str = Field(
+        default="soft natural lighting",
+        min_length=2,
+        max_length=100
+    )
+    composition: str = Field(
+        default="balanced composition",
+        min_length=2,
+        max_length=100
+    )
+    details: Optional[str] = Field(
+        default=None,
+        max_length=300
+    )
+
+
+# In-memory storage for image generation jobs.
+# A persistent database or queue would normally be used in production.
+
+image_jobs: dict[str, dict[str, str | None]] = {}
+
+def build_image_prompt(request: ImageRequest) -> str:
+    prompt_parts = [
+        f"Subject: {request.subject.strip()}",
+        f"Style: {request.style.strip()}",
+        f"Mood: {request.mood.strip()}",
+        f"Lighting: {request.lighting.strip()}",
+        f"Composition: {request.composition.strip()}",
+    ]
+
+    if request.details and request.details.strip():
+        prompt_parts.append(f"Additional details: {request.details.strip()}")
+    return ". ".join(prompt_parts) + "."
+
+
+@app.post("/images", status_code=status.HTTP_202_ACCEPTED)
+async def create_image(
+    request: ImageRequest,
+    background_tasks: BackgroundTasks
+):
+    image_id = str(uuid.uuid4())
+    image_prompt = build_image_prompt(request)
+
+    image_jobs[image_id] = {
+        "status": "processing",
+        "prompt": image_prompt,
+        "image_path": None,
+        "error": None,
+    }
+
+    background_tasks.add_task(
+        gen_image_task,
+        image_id,
+        image_prompt
+    )
+
+    return {
+        "image_id": image_id,
+        "status": "processing",
+        "status_url": f"/image/{image_id}",
+    }
 
 # TODO: Implement the background task function for image generation
 # This function will use the ImageGenerator service to generate images
 # based on the provided custom prompt and save them.
 
+def gen_image_task(image_id: str, prompt: str):
+    try:
+        # Temporary simulation of image generation.
+        # The real ImageGenerator call will replace this in the next step.
+        time.sleep(5)
+        image_jobs[image_id]["status"] = "ready"
+    except Exception as exc:
+        image_jobs[image_id]["status"] = "failed"
+        image_jobs[image_id]["error"] = str(exc)
+
 # TODO: Create an endpoint for retrieving generated images
 # The endpoint should take an image ID and return the corresponding image
 # if it's ready, or an appropriate status message otherwise.
+
+@app.get("/image/{image_id}")
+async def get_image(image_id: str):
+    job = image_jobs.get(image_id)
+
+    if job is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Image ID not found"
+        )
+    if job["status"] == "processing":
+        return JSONResponse(
+            status_code=status.HTTP_202_ACCEPTED,
+            content={
+                "image_id": image_id,
+                "status": "processing",
+            }
+        )
+    if job["status"] == "failed":
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=job["error"] or "Image generation failed"
+        )
+    return {
+        "image_id": image_id,
+        "status": "ready",
+        "prompt": job["prompt"],
+    }
 
 # TODO: Implement error handling for various possible failure scenarios
 
