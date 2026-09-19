@@ -1,3 +1,4 @@
+import logging
 import os
 import uuid
 from pathlib import Path
@@ -5,8 +6,9 @@ from typing import Optional
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, status
 from fastapi.responses import FileResponse, JSONResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
+from gpt_service import GPTService
 from image_generator import ImageGenerator
 
 app = FastAPI()
@@ -58,6 +60,28 @@ class ImageRequest(BaseModel):
         default=None,
         max_length=300
     )
+    @field_validator(
+    "subject",
+    "style",
+    "mood",
+    "lighting",
+    "composition",
+    mode="before"
+    )
+
+    @classmethod
+    def strip_required_text(cls, value):
+        if isinstance(value, str):
+            return value.strip()
+        return value
+
+    @field_validator("details", mode="before")
+    @classmethod
+    def strip_optional_details(cls, value):
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
 
 
 # In-memory storage for image generation jobs.
@@ -86,8 +110,14 @@ async def create_image(
     request: ImageRequest,
     background_tasks: BackgroundTasks
 ):
-    image_id = str(uuid.uuid4())
+    ensure_generation_service_available()
     image_prompt = build_image_prompt(request)
+    if check_prompt_for_profanity(image_prompt):
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Prompt was rejected by the profanity check"
+        )
+    image_id = str(uuid.uuid4())
 
     image_jobs[image_id] = {
         "status": "processing",
@@ -180,7 +210,65 @@ async def get_image(image_id: str):
 
 # TODO: Implement error handling for various possible failure scenarios
 
+def ensure_generation_service_available():
+    if not os.getenv("STABILITY_KEY"):
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Image generation service is not configured"
+        )
+
 # OPTIONAL: Implement any necessary profanity checking or validation for the user prompts
+
+def profanity_check_enabled() -> bool:
+    return os.getenv(
+        "ENABLE_PROFANITY_CHECK",
+        "false"
+    ).lower() in {"1", "true", "yes", "on"}
+
+def get_profanity_prompt_path() -> Path:
+    configured_path = Path(
+        os.getenv("PROFANITY_PROMPT_FILE", "profanity_prompt.txt")
+    )
+    if configured_path.is_absolute():
+        return configured_path
+    return Path(__file__).resolve().parent / configured_path
+
+def check_prompt_for_profanity(prompt: str) -> bool:
+    if not profanity_check_enabled():
+        return False
+    openai_api_key = os.getenv("OPENAI_API_KEY")
+    if not openai_api_key:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Prompt validation service is not configured"
+        )
+    profanity_prompt_path = get_profanity_prompt_path()
+    if not profanity_prompt_path.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Profanity prompt file could not be found"
+        )
+    profanity_prompt = profanity_prompt_path.read_text(
+        encoding="utf-8"
+    ).strip()
+
+    if not profanity_prompt:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Profanity prompt file is empty"
+        )
+    try:
+        gpt_service = GPTService(
+            openai_api_key,
+            profanity_prompt
+        )
+        return gpt_service.contains_profanity(prompt)
+    except Exception as exc:
+        logging.exception("Profanity check failed")
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Prompt validation service is temporarily unavailable"
+        ) from exc
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,1 +1,1 @@
-# Add your custom profanity prompt
+Determine whether the user's text contains profanity, abusive or hateful language, slurs, explicit sexual language, or other clearly offensive wording. Flag only content that actually contains such language; do not flag harmless, neutral, artistic, fictional, or descriptive text merely because it discusses a potentially sensitive subject.
