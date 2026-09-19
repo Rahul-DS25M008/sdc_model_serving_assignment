@@ -163,3 +163,5 @@ cython_debug/
 #.idea/
 
 log.txt
+# Generated assignment images
+assignment/generated_images/

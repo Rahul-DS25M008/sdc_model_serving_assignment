@@ -1,10 +1,10 @@
 import os
-import time
 import uuid
+from pathlib import Path
 from typing import Optional
 
 from fastapi import FastAPI, BackgroundTasks, HTTPException, status
-from fastapi.responses import JSONResponse
+from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel, Field
 
 from image_generator import ImageGenerator
@@ -64,6 +64,8 @@ class ImageRequest(BaseModel):
 # A persistent database or queue would normally be used in production.
 
 image_jobs: dict[str, dict[str, str | None]] = {}
+GENERATED_IMAGES_DIR = Path(__file__).resolve().parent / "generated_images"
+GENERATED_IMAGES_DIR.mkdir(parents=True, exist_ok=True)
 
 def build_image_prompt(request: ImageRequest) -> str:
     prompt_parts = [
@@ -112,9 +114,20 @@ async def create_image(
 
 def gen_image_task(image_id: str, prompt: str):
     try:
-        # Temporary simulation of image generation.
-        # The real ImageGenerator call will replace this in the next step.
-        time.sleep(5)
+        stability_key = os.getenv("STABILITY_KEY")
+        if not stability_key:
+            raise RuntimeError(
+                "STABILITY_KEY environment variable is not configured"
+            )
+        image_generator = ImageGenerator(stability_key)
+        image_binary = image_generator.generate_image(prompt)
+        if not image_binary:
+            raise RuntimeError(
+                "Image generation completed without returning image data"
+            )
+        image_path = GENERATED_IMAGES_DIR / f"{image_id}.png"
+        image_path.write_bytes(image_binary)
+        image_jobs[image_id]["image_path"] = str(image_path)
         image_jobs[image_id]["status"] = "ready"
     except Exception as exc:
         image_jobs[image_id]["status"] = "failed"
@@ -127,7 +140,6 @@ def gen_image_task(image_id: str, prompt: str):
 @app.get("/image/{image_id}")
 async def get_image(image_id: str):
     job = image_jobs.get(image_id)
-
     if job is None:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
@@ -146,11 +158,25 @@ async def get_image(image_id: str):
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=job["error"] or "Image generation failed"
         )
-    return {
-        "image_id": image_id,
-        "status": "ready",
-        "prompt": job["prompt"],
-    }
+    image_path = job["image_path"]
+    if not image_path:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Generated image path is missing"
+        )
+
+    image_file = Path(image_path)
+    if not image_file.is_file():
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Generated image file could not be found"
+        )
+    
+    return FileResponse(
+        path=image_file,
+        media_type="image/png",
+        filename=f"{image_id}.png"
+    )
 
 # TODO: Implement error handling for various possible failure scenarios
 

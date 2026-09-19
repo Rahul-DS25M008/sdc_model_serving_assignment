@@ -5,7 +5,7 @@
     "vscode": {
       "extensions": ["ms-python.python", "ms-python.vscode-pylance", "ms-toolsai.jupyter"],
       "settings": {
-        "python.defaultInterpreterPath": "${workspaceFolder}/1_fast_api_tutorial/.venv/bin/python",
+        "python.defaultInterpreterPath": "${workspaceFolder}/assignment/.venv/bin/python",
         "python.terminal.activateEnvironment": true
       }
     }
