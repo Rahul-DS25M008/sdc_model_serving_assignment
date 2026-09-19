@@ -16,6 +16,7 @@ app = FastAPI()
 # Function to be run as a background task.
 # This is just a placeholder function for demonstration.
 # In your application, this could be a function that generates an image.
+# Leaving this as is, generator function is implemented below anyway.
 def write_log(message: str):
     # Example of a time-consuming task: Writing a message to a file.
     # Replace this with the logic of your image generation task.
@@ -41,7 +42,6 @@ class ImageRequest(BaseModel):
         max_length=100
     )
     mood: str = Field(
-
         default="cinematic",
         min_length=2,
         max_length=100
@@ -61,12 +61,12 @@ class ImageRequest(BaseModel):
         max_length=300
     )
     @field_validator(
-    "subject",
-    "style",
-    "mood",
-    "lighting",
-    "composition",
-    mode="before"
+        "subject",
+        "style",
+        "mood",
+        "lighting",
+        "composition",
+        mode="before"
     )
 
     @classmethod
